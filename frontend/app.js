@@ -1,41 +1,27 @@
 
-// This is temporary data for frontend testing.
-// Later, this will be replaced by API calls to Josue's
-// Express backend.
-//
-// The backend will then communicate with MongoDB.
-let tasks = [
-    {
-        id: 1,
-        title: "Set up AWS EC2",
-        description: "Configure the AWS environment for the project.",
-        priority: "High",
-        status: "In Progress",
-        dueDate: "2026-08-01"
-    },
-    {
-        id: 2,
-        title: "Create frontend dashboard",
-        description: "Build the Smart Task Tracker dashboard.",
-        priority: "Medium",
-        status: "Pending",
-        dueDate: "2026-08-02"
-    },
-    {
-        id: 3,
-        title: "Set up MongoDB",
-        description: "Create the MongoDB database and task collection.",
-        priority: "High",
-        status: "Completed",
-        dueDate: "2026-07-30"
+const API_URL = "http://18.224.116.226:5000/api/tasks";
+
+let tasks = [];
+
+// LOAD TASKS FROM THE BACKEND
+
+async function loadTasks() {
+    try {
+        const response = await fetch(API_URL);
+        tasks = await response.json();
+    } catch (error) {
+        console.error("Failed to load tasks:", error);
+        tasks = [];
     }
-];
+
+    renderTasks();
+    updateStatistics();
+}
 
 // INITIALIZE APPLICATION
 
 document.addEventListener("DOMContentLoaded", function () {
-    renderTasks();
-    updateStatistics();
+    loadTasks();
 
     const saveTaskButton = document.getElementById("saveTaskBtn");
     saveTaskButton.addEventListener("click", addTask);
@@ -79,8 +65,8 @@ function renderTasks() {
             <td>${getStatusBadge(task.status)}</td>
             <td>${formatDate(task.dueDate)}</td>
             <td>
-                <button type="button" class="btn btn-sm btn-outline-primary me-1" onclick="editTask(${task.id})">Edit</button>
-                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteTask(${task.id})">Delete</button>
+                <button type="button" class="btn btn-sm btn-outline-primary me-1" onclick="editTask('${task._id}')">Edit</button>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteTask('${task._id}')">Delete</button>
             </td>
         `;
 
@@ -122,7 +108,7 @@ function getStatusBadge(status) {
 
 
 // ADD TASK
-function addTask() {
+async function addTask() {
 
     // Get form values
     const title = document.getElementById("taskTitle").value.trim();
@@ -139,7 +125,6 @@ function addTask() {
 
     // Create new task
     const newTask = {
-        id: Date.now(),
         title: title,
         description: description,
         priority: priority,
@@ -147,14 +132,24 @@ function addTask() {
         dueDate: dueDate
     };
 
-    // Add task to local array
-    tasks.push(newTask);
+    try {
+        const response = await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(newTask)
+        });
 
-    // Refresh task table
-    renderTasks();
+        if (!response.ok) {
+            throw new Error("Request failed with status " + response.status);
+        }
+    } catch (error) {
+        console.error("Failed to create task:", error);
+        alert("Could not save the task. Please try again.");
+        return;
+    }
 
-    // Update statistics
-    updateStatistics();
+    // Refresh from the backend and update statistics
+    await loadTasks();
 
     // Reset form
     document.getElementById("addTaskForm").reset();
@@ -166,25 +161,32 @@ function addTask() {
 }
 
 // DELETE TASK
-function deleteTask(id) {
+async function deleteTask(id) {
     const confirmed = confirm("Are you sure you want to delete this task?");
 
     if (!confirmed) {
         return;
     }
 
-    tasks = tasks.filter(function (task) {
-        return task.id !== id;
-    });
+    try {
+        const response = await fetch(API_URL + "/" + id, { method: "DELETE" });
 
-    renderTasks();
-    updateStatistics();
+        if (!response.ok) {
+            throw new Error("Request failed with status " + response.status);
+        }
+    } catch (error) {
+        console.error("Failed to delete task:", error);
+        alert("Could not delete the task. Please try again.");
+        return;
+    }
+
+    await loadTasks();
 }
 
 // EDIT TASK
 function editTask(id) {
     const task = tasks.find(function (task) {
-        return task.id === id;
+        return task._id === id;
     });
 
     if (!task) {
