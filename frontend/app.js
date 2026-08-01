@@ -2,6 +2,10 @@
 const API_URL = "http://18.224.116.226:5000/api/tasks";
 
 let tasks = [];
+let searchTerm = "";
+let statusFilterValue = "All";
+let taskToDeleteId = null;
+let taskToEditId = null;
 
 // LOAD TASKS FROM THE BACKEND
 
@@ -21,12 +25,40 @@ async function loadTasks() {
 // INITIALIZE APPLICATION
 
 document.addEventListener("DOMContentLoaded", function () {
+    bindEvents();
     loadTasks();
 
-    const saveTaskButton = document.getElementById("saveTaskBtn");
-    saveTaskButton.addEventListener("click", addTask);
+    const modalElement = document.getElementById("addTaskModal");
+    modalElement?.addEventListener("hidden.bs.modal", resetTaskModal);
 });
 
+function bindEvents() {
+    const saveTaskButton = document.getElementById("saveTaskBtn");
+    saveTaskButton?.addEventListener("click", saveTask);
+
+    const searchInput = document.getElementById("taskSearchInput");
+    searchInput?.addEventListener("input", function (event) {
+        searchTerm = event.target.value.trim().toLowerCase();
+        renderTasks();
+    });
+
+    const statusFilter = document.getElementById("taskStatusFilter");
+    statusFilter?.addEventListener("change", function (event) {
+        statusFilterValue = event.target.value;
+        renderTasks();
+    });
+
+    const confirmDeleteButton = document.getElementById("confirmDeleteBtn");
+    confirmDeleteButton?.addEventListener("click", confirmDeleteTask);
+}
+
+function getFilteredTasks() {
+    return tasks.filter(function (task) {
+        const matchesSearch = task.title.toLowerCase().includes(searchTerm);
+        const matchesStatus = statusFilterValue === "All" || task.status === statusFilterValue;
+        return matchesSearch && matchesStatus;
+    });
+}
 
 // RENDER TASKS
 
@@ -34,16 +66,18 @@ function renderTasks() {
     const taskTableBody = document.getElementById("taskTableBody");
     taskTableBody.innerHTML = "";
 
+    const filteredTasks = getFilteredTasks();
+
     // EMPTY STATE
 
-    if (tasks.length === 0) {
+    if (filteredTasks.length === 0) {
         taskTableBody.innerHTML = `
             <tr>
                 <td colspan="5">
                     <div class="empty-state">
                         <div class="empty-state-icon">✓</div>
-                        <h4>No Tasks Yet</h4>
-                        <p class="text-muted">Create your first task to get started.</p>
+                        <h4>No matching tasks</h4>
+                        <p class="text-muted">Try a different title or status filter.</p>
                     </div>
                 </td>
             </tr>
@@ -53,7 +87,7 @@ function renderTasks() {
 
 
     // CREATE TASK ROWS
-    tasks.forEach(function (task) {
+    filteredTasks.forEach(function (task) {
         const row = document.createElement("tr");
 
         row.innerHTML = `
@@ -66,7 +100,7 @@ function renderTasks() {
             <td>${formatDate(task.dueDate)}</td>
             <td>
                 <button type="button" class="btn btn-sm btn-outline-primary me-1" onclick="editTask('${task._id}')">Edit</button>
-                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteTask('${task._id}')">Delete</button>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="openDeleteModal('${task._id}')">Delete</button>
             </td>
         `;
 
@@ -107,24 +141,20 @@ function getStatusBadge(status) {
 }
 
 
-// ADD TASK
-async function addTask() {
-
-    // Get form values
+// SAVE TASK (CREATE OR UPDATE)
+async function saveTask() {
     const title = document.getElementById("taskTitle").value.trim();
     const description = document.getElementById("taskDescription").value.trim();
     const priority = document.getElementById("taskPriority").value;
     const status = document.getElementById("taskStatus").value;
     const dueDate = document.getElementById("taskDueDate").value;
 
-    // Validate task title
     if (title === "") {
-        alert("Please enter a task title.");
+        showToast("Please enter a task title.", "danger");
         return;
     }
 
-    // Create new task
-    const newTask = {
+    const taskData = {
         title: title,
         description: description,
         priority: priority,
@@ -132,55 +162,71 @@ async function addTask() {
         dueDate: dueDate
     };
 
+    const isEditing = Boolean(taskToEditId);
+
     try {
-        const response = await fetch(API_URL, {
-            method: "POST",
+        const url = isEditing ? API_URL + "/" + taskToEditId : API_URL;
+        const method = isEditing ? "PUT" : "POST";
+
+        const response = await fetch(url, {
+            method: method,
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(newTask)
+            body: JSON.stringify(taskData)
         });
 
         if (!response.ok) {
             throw new Error("Request failed with status " + response.status);
         }
     } catch (error) {
-        console.error("Failed to create task:", error);
-        alert("Could not save the task. Please try again.");
+        console.error("Failed to save task:", error);
+        showToast("Could not save the task. Please try again.", "danger");
         return;
     }
 
-    // Refresh from the backend and update statistics
     await loadTasks();
 
-    // Reset form
     document.getElementById("addTaskForm").reset();
+    taskToEditId = null;
 
-    // Close modal
     const modalElement = document.getElementById("addTaskModal");
     const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
     modal.hide();
+
+    showToast(isEditing ? "Task updated successfully." : "Task created successfully.", "success");
 }
 
-// DELETE TASK
-async function deleteTask(id) {
-    const confirmed = confirm("Are you sure you want to delete this task?");
+function openDeleteModal(id) {
+    taskToDeleteId = id;
+    const modalElement = document.getElementById("deleteConfirmModal");
+    const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+    modal.show();
+}
 
-    if (!confirmed) {
+async function confirmDeleteTask() {
+    if (!taskToDeleteId) {
         return;
     }
 
     try {
-        const response = await fetch(API_URL + "/" + id, { method: "DELETE" });
+        const response = await fetch(API_URL + "/" + taskToDeleteId, { method: "DELETE" });
 
         if (!response.ok) {
             throw new Error("Request failed with status " + response.status);
         }
     } catch (error) {
         console.error("Failed to delete task:", error);
-        alert("Could not delete the task. Please try again.");
+        showToast("Could not delete the task. Please try again.", "danger");
         return;
     }
 
+    taskToDeleteId = null;
     await loadTasks();
+
+    const modalElement = document.getElementById("deleteConfirmModal");
+    const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+    modal.hide();
+
+    showToast("Task deleted successfully.", "success");
 }
 
 // EDIT TASK
@@ -193,7 +239,27 @@ function editTask(id) {
         return;
     }
 
-    alert("Edit functionality will be added next.");
+    taskToEditId = id;
+
+    document.getElementById("taskTitle").value = task.title || "";
+    document.getElementById("taskDescription").value = task.description || "";
+    document.getElementById("taskPriority").value = task.priority || "Medium";
+    document.getElementById("taskStatus").value = task.status || "Pending";
+    document.getElementById("taskDueDate").value = task.dueDate || "";
+
+    const modalTitle = document.querySelector("#addTaskModal .modal-title");
+    if (modalTitle) {
+        modalTitle.textContent = "Edit Task";
+    }
+
+    const saveButton = document.getElementById("saveTaskBtn");
+    if (saveButton) {
+        saveButton.textContent = "Save Changes";
+    }
+
+    const modalElement = document.getElementById("addTaskModal");
+    const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+    modal.show();
 }
 
 // UPDATE DASHBOARD STATISTICS
@@ -238,4 +304,34 @@ function escapeHtml(value) {
     const div = document.createElement("div");
     div.textContent = value;
     return div.innerHTML;
+}
+
+function showToast(message, type = "success") {
+    const toastElement = document.getElementById("appToast");
+    const toastMessage = document.getElementById("toastMessage");
+
+    if (!toastElement || !toastMessage) {
+        return;
+    }
+
+    toastMessage.textContent = message;
+    toastElement.className = `toast align-items-center text-bg-${type === "danger" ? "danger" : "success"} border-0`;
+
+    const toast = bootstrap.Toast.getOrCreateInstance(toastElement);
+    toast.show();
+}
+
+function resetTaskModal() {
+    document.getElementById("addTaskForm").reset();
+    taskToEditId = null;
+
+    const modalTitle = document.querySelector("#addTaskModal .modal-title");
+    if (modalTitle) {
+        modalTitle.textContent = "Add New Task";
+    }
+
+    const saveButton = document.getElementById("saveTaskBtn");
+    if (saveButton) {
+        saveButton.textContent = "Add Task";
+    }
 }
