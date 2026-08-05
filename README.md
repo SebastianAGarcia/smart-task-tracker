@@ -6,7 +6,6 @@ Cloud Computing Final Project
 
 - Sebastian Garcia
 - Josue Canales
-- Evan Hudson
 
 ## Overview
 
